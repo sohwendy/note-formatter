@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>OneNote Revision Transformer</title>
+
+<style>
+body {
+  font-family: Arial, sans-serif;
+  display: flex;
+  gap: 16px;
+  padding: 16px;
+  background: #fafafa;
+}
+
+.panel {
+  width: 33%;
+}
+
+.box {
+  border: 1px solid #ddd;
+  background: white;
+  padding: 10px;
+  min-height: 300px;
+  white-space: pre-wrap;
+}
+
+input, button {
+  width: 100%;
+  margin: 5px 0;
+  padding: 6px;
+}
+
+.heading {
+  margin-top: 18px;
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+
+.h1 { font-size: 1.4em; }
+.h2 { font-size: 1.2em; }
+.h3 { font-size: 1.05em; color: #333; }
+
+.controls {
+  font-size: 13px;
+}
+</style>
+</head>
+
+<body>
+
+<!-- DICTIONARY -->
+<div class="panel">
+<h3>Dictionary</h3>
+
+<input id="long" placeholder="Long phrase" />
+<input id="short" placeholder="Short form" />
+<button onclick="addRule()">Add Rule</button>
+
+<div id="rules"></div>
+</div>
+
+<!-- INPUT -->
+<div class="panel">
+<h3>Input (OneNote Paste)</h3>
+
+<div class="controls">
+<label><input type="checkbox" id="normalize" checked /> Normalize punctuation</label><br/>
+<label><input type="checkbox" id="headings" checked /> Detect headings</label>
+</div>
+
+<button onclick="pasteFromClipboard()">Paste</button>
+
+<div id="editor" class="box" contenteditable="true"></div>
+
+<button onclick="transform()">Transform</button>
+</div>
+
+<!-- OUTPUT -->
+<div class="panel">
+<h3>Output</h3>
+<div id="output" class="box"></div>
+<button onclick="copyOutput()">Copy Output</button>
+</div>
+
+<script>
+let dict = {};
+
+/* ---------------- DICTIONARY ---------------- */
+function addRule() {
+  const long = document.getElementById("long").value.trim();
+  const short = document.getElementById("short").value.trim();
+
+  if (!long || !short) return;
+
+  dict[long] = short;
+  renderRules();
+
+  document.getElementById("long").value = "";
+  document.getElementById("short").value = "";
+}
+
+function renderRules() {
+  document.getElementById("rules").innerHTML =
+    Object.entries(dict)
+      .map(([k, v]) => `<div>${k} → ${v}</div>`)
+      .join("");
+}
+
+/* ---------------- ONE NOTE NORMALIZER ---------------- */
+function normalizeText(text) {
+  const normalize = document.getElementById("normalize").checked;
+  if (!normalize) return text;
+
+  return text
+    .replaceAll("—", "--")
+    .replaceAll("–", "--")
+    .replaceAll("“", '"')
+    .replaceAll("”", '"')
+    .replaceAll("‘", "'")
+    .replaceAll("’", "'");
+}
+
+/* ---------------- HEADING DETECTION ---------------- */
+function detectHeading(text) {
+  const t = text.trim();
+
+  if (t.length < 40 && t === t.toUpperCase()) return "h1";
+  if (t.length < 60 && /^[A-Z][a-z]/.test(t)) return "h2";
+  if (t.endsWith(":")) return "h3";
+
+  return null;
+}
+
+/* ---------------- CORE TRANSFORM ---------------- */
+function transform() {
+  const editor = document.getElementById("editor");
+  const clone = editor.cloneNode(true);
+
+  const useHeadings = document.getElementById("headings").checked;
+
+  function walk(node) {
+    if (node.nodeType === 3) {
+      let text = normalizeText(node.nodeValue);
+
+      // abbreviation replacement
+      for (const [long, short] of Object.entries(dict)) {
+        text = text.replaceAll(long, short);
+      }
+
+      if (useHeadings) {
+        const type = detectHeading(text);
+
+        if (type) {
+          const div = document.createElement("div");
+          div.className = `heading ${type}`;
+          div.textContent = text;
+
+          node.parentNode.replaceChild(div, node);
+          return;
+        }
+      }
+
+      node.nodeValue = text;
+    } else {
+      if (node.tagName === "PRE" || node.tagName === "CODE") return;
+      node.childNodes.forEach(walk);
+    }
+  }
+
+  walk(clone);
+
+  document.getElementById("output").innerHTML = clone.innerHTML;
+}
+
+/* ---------------- CLIPBOARD ---------------- */
+async function pasteFromClipboard() {
+  const text = await navigator.clipboard.readText();
+  document.getElementById("editor").innerText = text;
+}
+
+async function copyOutput() {
+  const html = document.getElementById("output").innerHTML;
+
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "text/html": new Blob([html], { type: "text/html" })
+    })
+  ]);
+
+  alert("Copied!");
+}
+</script>
+
+</body>
+</html>
